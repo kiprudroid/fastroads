@@ -28,6 +28,7 @@ function resolveSeed(): number {
 }
 
 const seed = resolveSeed();
+const flags = new URLSearchParams(window.location.search);
 
 // Surface fatal errors visibly (also how we debug headless runs).
 window.addEventListener('error', (e) => {
@@ -41,7 +42,11 @@ window.addEventListener('error', (e) => {
 const root = document.getElementById('app');
 if (!root) throw new Error('#app root missing');
 
-const game = new Game(root, { seed });
+const game = new Game(root, {
+  seed,
+  debugRoad: flags.get('debugRoad') === '1',
+  autopilot: flags.get('autopilot') === '1',
+});
 game.start();
 
 // Expose for debugging in the browser console.

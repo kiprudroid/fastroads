@@ -38,6 +38,8 @@ export const ROAD = {
   /** Wavelengths (meters) of the elevation fbm octaves. */
   GRADE_WAVE_LEN_LONG: 700,
   GRADE_WAVE_LEN_SHORT: 250,
+  /** fbm octaves for the elevation profile. */
+  GRADE_OCTAVES: 3,
   /** Hard cap on absolute road grade (slope) — enforced by clamping. */
   MAX_GRADE: 0.07, // 7%
 
@@ -47,8 +49,6 @@ export const ROAD = {
   LOOKAHEAD_MARGIN: 300,
   /** Local-search window (samples) around the previous s for the car. */
   HINT_WINDOW: 10,
-  /** Spatial-hash cell size for nearest-road queries. */
-  HASH_CELL: 0, // 0 => derived from BLEND_DISTANCE at construction
 } as const;
 
 // ---------------------------------------------------------------------------
@@ -277,3 +277,15 @@ export const PIXEL_RATIO = {
 
 /** Default quality when no `?quality=` param is given. */
 export const DEFAULT_QUALITY: QualityLevel = 'medium';
+
+// ---------------------------------------------------------------------------
+// Debug / dev-only tools (never enabled by default)
+// ---------------------------------------------------------------------------
+export const DEBUG = {
+  /** `?debugRoad=1`: generate and plot this much road (m). */
+  ROAD_PLOT_LENGTH: 5000,
+  /** Top-down plot canvas size (CSS px). */
+  ROAD_PLOT_SIZE: 340,
+  /** Redraw throttle for the plot (ms). */
+  ROAD_PLOT_INTERVAL_MS: 250,
+} as const;

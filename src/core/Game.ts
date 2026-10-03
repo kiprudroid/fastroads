@@ -22,15 +22,17 @@ import {
   Scene,
   WebGLRenderer,
 } from 'three';
-import { CAMERA, QUALITY_PRESETS, SKY, TERRAIN } from '../config.ts';
+import { CAMERA, DEBUG, QUALITY_PRESETS, ROAD, SKY, TERRAIN } from '../config.ts';
 import type { QualityLevel } from '../types.ts';
 import { Input } from './Input.ts';
 import { Loop } from './Loop.ts';
 import { Quality, resolveQualityLevel } from './Quality.ts';
 import { Sky } from '../world/Sky.ts';
 import { Palette } from '../world/Palette.ts';
+import { RoadGenerator } from '../world/RoadGenerator.ts';
 import { DebugStats } from '../debug/DebugStats.ts';
 import { FreeFlyCamera } from '../debug/FreeFlyCamera.ts';
+import { RoadPlot } from '../debug/RoadPlot.ts';
 
 export interface GameOptions {
   seed: number;
@@ -45,6 +47,7 @@ const TEMP_GROUND_SIZE = 3000; // phase 3 replaces this with terrain tiles
 export class Game {
   readonly seed: number;
   readonly input: Input;
+  readonly road: RoadGenerator;
 
   private readonly root: HTMLElement;
   private readonly renderer: WebGLRenderer;
@@ -56,6 +59,9 @@ export class Game {
   private readonly debugStats: DebugStats;
   private readonly freeCam: FreeFlyCamera;
   private readonly tempGround: Mesh;
+  private readonly roadPlot: RoadPlot | null;
+  /** Arc length the viewer (car, later) is at — drives world streaming. */
+  private viewerS = 0;
 
   // fps / stats sampling
   private fpsFrames = 0;
@@ -104,6 +110,9 @@ export class Game {
     this.debugStats = new DebugStats(root);
     this.freeCam = new FreeFlyCamera(this.camera, this.renderer.domElement, this.input);
 
+    this.road = new RoadGenerator(opts.seed);
+    this.roadPlot = opts.debugRoad === true ? new RoadPlot(root, this.road) : null;
+
     this.loop = new Loop(this.step, this.frame);
 
     window.addEventListener('resize', this.onResize);
@@ -130,6 +139,14 @@ export class Game {
   // -------------------------------------------------------------------------
   private readonly frame = (dt: number): void => {
     this.handleActions();
+
+    // World streaming: the road must cover the view radius (+margin) ahead.
+    this.road.ensureAhead(
+      Math.max(
+        this.viewerS + TERRAIN.VIEW_RADIUS + ROAD.LOOKAHEAD_MARGIN,
+        this.roadPlot !== null ? DEBUG.ROAD_PLOT_LENGTH : 0,
+      ),
+    );
 
     if (!this.loop.paused && this.freeCam.enabled) {
       this.freeCam.update(dt);
@@ -158,11 +175,13 @@ export class Game {
         geometries: info.memory.geometries,
         textures: info.memory.textures,
         activeTiles: 0, // phase 3+
-        roadSamples: 0, // phase 2+
+        roadSamples: this.road.sampleCount,
         pixelRatio: this.quality.pixelRatio,
       },
       now,
     );
+
+    if (this.roadPlot !== null) this.roadPlot.update(now);
 
     this.input.endFrame();
   };
@@ -196,6 +215,7 @@ export class Game {
     (this.tempGround.material as MeshLambertMaterial).dispose();
     this.freeCam.dispose();
     this.debugStats.dispose();
+    this.roadPlot?.dispose();
     this.input.dispose();
     this.renderer.dispose();
     this.renderer.domElement.remove();

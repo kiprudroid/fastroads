@@ -31,8 +31,25 @@ body {
 
 #app canvas {
   display: block;
+}
+
+/* The WebGL canvas fills the viewport; overlay canvases opt out. */
+#app > canvas:not(.road-plot) {
   position: absolute;
   inset: 0;
+}
+
+/* ---------------------------------------------------------------------------
+ * Top-down road plot (?debugRoad=1)
+ * ------------------------------------------------------------------------- */
+.road-plot {
+  position: absolute;
+  right: 8px;
+  bottom: 8px;
+  z-index: 20;
+  border-radius: 6px;
+  pointer-events: none;
+  user-select: none;
 }
 
 /* ---------------------------------------------------------------------------
