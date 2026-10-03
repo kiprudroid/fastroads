@@ -131,15 +131,13 @@ export const SKY = {
   /** Dome radius = camera.far * DOME_FAR_FACTOR. */
   DOME_FAR_FACTOR: 0.9,
   /** Sky gradient sharpness (how quickly zenith hue takes over). */
-  GRADIENT_POWER: 1.35,
+  GRADIENT_POWER: 0.65,
   /** Sun glow angular size. */
-  SUN_GLOW_SIZE: 0.22,
+  SUN_GLOW_SIZE: 0.12,
   HEMI_SKY: 0xcfe3f5,
   HEMI_GROUND: 0x6b7a55,
   HEMI_INTENSITY: 1.15,
   SUN_INTENSITY: 1.7,
-  /** Camera far plane = VIEW_RADIUS * this. */
-  FAR_FACTOR: 1.3,
 } as const;
 
 // ---------------------------------------------------------------------------
@@ -165,7 +163,6 @@ export const CAR = {
   MAX_STEER_HIGH: 0.07,
   /** Lateral-acceleration cap (anti-slide understeer). */
   MAX_LAT_ACCEL: 12,
-  /** Drag multiplier applied once fully off-road. */
   /** Soft wall: beyond this lateral offset we nudge back. */
   SOFT_WALL_DIST: 35,
   SOFT_WALL_BLEND: 2.0, // 1/s lerp rate toward road heading
@@ -197,6 +194,8 @@ export const CAMERA = {
   HEADING_SMOOTH: 2.5,
   /** Never let the camera sink below terrain + this. */
   MIN_GROUND_CLEARANCE: 1.5,
+  /** Camera far plane = VIEW_RADIUS * this. */
+  FAR_FACTOR: 1.3,
 } as const;
 
 // ---------------------------------------------------------------------------

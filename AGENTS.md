@@ -17,6 +17,24 @@ bun test             # pure-logic tests (road, height field, determinism)
 
 Every phase must pass `bun run typecheck`, `bun test`, `bun run build`.
 
+## Visual verification (headless)
+
+Firefox's `firefox --screenshot` CLI does **not** composite WebGL canvases —
+use the BiDi tool instead:
+
+```bash
+# 1. headless firefox with the remote agent (once per session)
+firefox --headless --no-remote --profile /tmp/ffprof2 \
+  --remote-debugging-port=9222 about:blank &
+# 2. capture + console dump
+bun tools/screenshot.ts "http://127.0.0.1:5173/" /tmp/shot.png 4000
+```
+
+The tool prints page console output (errors/warnings) alongside the PNG;
+inspect pixels with ImageMagick (`convert shot.png -format "%c" histogram:info:-`).
+The in-page error overlay (dark red screen with the message) is the fallback
+when script evaluation is unavailable.
+
 ## Stack
 
 - **Bun** package manager + test runner; **Vite** (vanilla TS, no framework).
