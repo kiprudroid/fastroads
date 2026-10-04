@@ -17,6 +17,7 @@ import {
   Color,
   PerspectiveCamera,
   Scene,
+  Vector3,
   WebGLRenderer,
 } from 'three';
 import { CAMERA, DEBUG, QUALITY_PRESETS, ROAD, SKY, TERRAIN } from '../config.ts';
@@ -33,6 +34,8 @@ import { DebugStats } from '../debug/DebugStats.ts';
 import { FreeFlyCamera } from '../debug/FreeFlyCamera.ts';
 import { RoadPlot } from '../debug/RoadPlot.ts';
 import { Autopilot } from '../debug/Autopilot.ts';
+import { Car, type CarControls } from '../vehicle/Car.ts';
+import { CarModel } from '../vehicle/CarModel.ts';
 import type { NearestResult } from '../types.ts';
 
 export interface GameOptions {
@@ -62,6 +65,16 @@ export class Game {
   private readonly terrain: Terrain;
   private readonly roadMesh: RoadMesh;
   private readonly autopilot: Autopilot | null;
+  private readonly heightField: HeightField;
+  readonly car: Car;
+  private readonly carModel: CarModel;
+  private readonly controls: CarControls = {
+    throttle: 0,
+    brake: 0,
+    left: false,
+    right: false,
+  };
+  private readonly followTarget = new Vector3();
   /** Arc length the viewer (car, later) is at — drives world streaming. */
   private viewerS = 0;
   private readonly viewerNearest: NearestResult = {
@@ -119,6 +132,7 @@ export class Game {
       TERRAIN.VIEW_RADIUS + ROAD.LOOKAHEAD_MARGIN,
     );
     const heightField = new HeightField(opts.seed, this.road);
+    this.heightField = heightField;
     this.terrain = new Terrain(this.scene, heightField, level);
     this.roadMesh = new RoadMesh(
       this.scene,
@@ -127,7 +141,12 @@ export class Game {
       this.renderer.capabilities.getMaxAnisotropy(),
     );
     this.autopilot = opts.autopilot === true ? new Autopilot(this.road) : null;
-    if (this.autopilot !== null) this.freeCam.enabled = false;
+    this.freeCam.enabled = false; // car view by default; B toggles free-fly
+
+    this.car = new Car(this.road, heightField);
+    this.carModel = new CarModel();
+    this.carModel.group.rotation.order = 'YXZ';
+    this.scene.add(this.carModel.group);
 
     // Synchronous first build so the player never starts in a void.
     this.terrain.buildInitial(this.camera.position.x, this.camera.position.z);
@@ -149,8 +168,18 @@ export class Game {
   // -------------------------------------------------------------------------
   // Fixed physics step (1/60 s)
   // -------------------------------------------------------------------------
-  private readonly step = (_dt: number): void => {
-    // phase 5+: Input -> Car.update(dt)
+  private readonly step = (dt: number): void => {
+    if (this.autopilot !== null) {
+      this.autopilot.drive(this.car, dt);
+      return;
+    }
+
+    this.controls.throttle = this.input.isDown('throttle') ? 1 : 0;
+    this.controls.brake = this.input.isDown('brake') ? 1 : 0;
+    this.controls.left = this.input.isDown('left');
+    this.controls.right = this.input.isDown('right');
+    if (this.input.consume('cruise')) this.car.toggleCruise();
+    this.car.update(dt, this.controls);
   };
 
   // -------------------------------------------------------------------------
@@ -160,11 +189,11 @@ export class Game {
     this.handleActions();
 
     if (!this.loop.paused) {
-      // --- camera source: autopilot (dev) or free-fly ---
-      if (this.autopilot !== null) {
-        this.autopilot.updateCamera(this.camera, dt);
-      } else if (this.freeCam.enabled) {
+      // --- camera source: free-fly (debug, B) or follow-the-car ---
+      if (this.freeCam.enabled) {
         this.freeCam.update(dt);
+      } else {
+        this.updateFollowCamera();
       }
 
       // --- viewer's position on the road drives all streaming ---
@@ -173,6 +202,8 @@ export class Game {
       if (Number.isFinite(this.viewerNearest.dist)) {
         this.viewerS = this.viewerNearest.s;
       }
+      // Never stream less than the car needs.
+      if (this.car.s > this.viewerS) this.viewerS = this.car.s;
 
       this.road.ensureAhead(
         Math.max(
@@ -183,6 +214,15 @@ export class Game {
 
       this.terrain.update(cam.x, cam.z);
       this.roadMesh.update(this.viewerS);
+
+      // Keep the car model in sync with physics.
+      this.carModel.group.position.set(this.car.x, this.car.y, this.car.z);
+      this.carModel.group.rotation.set(
+        this.car.pitch,
+        -this.car.heading,
+        this.car.roll,
+      );
+      this.carModel.update(dt, this.car.speed, this.car.steerAngle);
 
       // Trim AFTER eviction: keep samples for every active tile (they can sit
       // up to VIEW_RADIUS + TILE_SIZE behind the viewer), plus TRIM_BEHIND.
@@ -231,10 +271,35 @@ export class Game {
 
   private handleActions(): void {
     if (this.input.consume('debugStats')) this.debugStats.toggle();
+    if (this.input.consume('freeCam')) {
+      this.freeCam.enabled = !this.freeCam.enabled;
+    }
 
     if (this.input.consume('pause')) {
       this.loop.setUserPaused(!this.loop.paused);
     }
+  }
+
+  /**
+   * Rigid chase view (temporary until phase 6's ChaseCamera): sits behind the
+   * car and looks ahead, never below the terrain.
+   */
+  private updateFollowCamera(): void {
+    const fwdX = Math.sin(this.car.heading);
+    const fwdZ = -Math.cos(this.car.heading);
+    const camX = this.car.x - fwdX * CAMERA.BACK;
+    const camZ = this.car.z - fwdZ * CAMERA.BACK;
+    let camY = this.car.y + CAMERA.UP;
+    const ground = this.heightField.heightAt(camX, camZ);
+    camY = Math.max(camY, ground + CAMERA.MIN_GROUND_CLEARANCE);
+
+    this.camera.position.set(camX, camY, camZ);
+    this.followTarget.set(
+      this.car.x + fwdX * CAMERA.LOOK_AHEAD,
+      this.car.y + CAMERA.LOOK_UP,
+      this.car.z + fwdZ * CAMERA.LOOK_AHEAD,
+    );
+    this.camera.lookAt(this.followTarget);
   }
 
   // -------------------------------------------------------------------------
@@ -256,6 +321,8 @@ export class Game {
     this.sky.dispose();
     this.roadMesh.dispose();
     this.terrain.dispose();
+    this.scene.remove(this.carModel.group);
+    this.carModel.dispose();
     this.freeCam.dispose();
     this.debugStats.dispose();
     this.roadPlot?.dispose();

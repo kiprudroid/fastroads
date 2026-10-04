@@ -170,8 +170,8 @@ export const CAR = {
   CRUISE_DEFAULT: 25, // m/s
   ACCEL: 7, // m/s^2
   BRAKE: 14, // m/s^2
-  /** Quadratic drag coefficient: a -= DRAG * v^2. */
-  DRAG: 0.0035,
+  /** Quadratic drag coefficient: a -= DRAG * v^2 (terminal ~MAX_SPEED). */
+  DRAG: 0.00325,
   /** Constant rolling resistance deceleration (m/s^2). */
   ROLL: 0.4,
   /** Off-road drag multiplier. */
@@ -187,7 +187,21 @@ export const CAR = {
   MAX_LAT_ACCEL: 12,
   /** Soft wall: beyond this lateral offset we nudge back. */
   SOFT_WALL_DIST: 35,
-  SOFT_WALL_BLEND: 2.0, // 1/s lerp rate toward road heading
+  SOFT_WALL_BLEND: 4.5, // 1/s lerp rate toward wall + road heading
+  /** Cruise-control P controller gain (throttle per m/s of speed error). */
+  CRUISE_KP: 0.12,
+  /** Brake gain while cruising (per m/s over target). */
+  CRUISE_BRAKE_KP: 0.25,
+  /** Low-poly body dimensions (m). */
+  BODY_LENGTH: 4.2,
+  BODY_WIDTH: 1.8,
+  BODY_HEIGHT: 0.55,
+  CABIN_LENGTH: 2.0,
+  CABIN_WIDTH: 1.5,
+  CABIN_HEIGHT: 0.42,
+  CABIN_OFFSET_Z: -0.25,
+  WHEEL_RADIUS: 0.34,
+  WHEEL_WIDTH: 0.22,
   /** Ground-following sample half-extents (wheel positions). */
   TRACK_WIDTH: 1.6,
   WHEELBASE_VIS: 2.6,
@@ -303,6 +317,20 @@ export const DEFAULT_QUALITY: QualityLevel = 'medium';
 // ---------------------------------------------------------------------------
 // Debug / dev-only tools (never enabled by default)
 // ---------------------------------------------------------------------------
+export const AUTOPILOT = {
+  /** Aim point ahead of the car (m): base + seconds-of-travel. */
+  LOOKAHEAD_BASE: 12,
+  LOOKAHEAD_PER_MS: 0.6,
+  /** Steer gain: steering input per radian of heading error. */
+  HEADING_GAIN: 2.4,
+  /** Yaw-rate damping: subtracted (radians of error per rad/s of turning). */
+  DAMPING: 0.15,
+  /** Longitudinal P gains toward CRUISE_DEFAULT. */
+  SPEED_KP: 0.25,
+  BRAKE_KP: 0.35,
+  SPEED_TOLERANCE: 1.0,
+} as const;
+
 export const DEBUG = {
   /** `?debugRoad=1`: generate and plot this much road (m). */
   ROAD_PLOT_LENGTH: 5000,
