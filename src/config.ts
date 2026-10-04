@@ -96,6 +96,9 @@ export const TERRAIN = {
 export const ROAD_MESH = {
   /** Arc length of one pooled ribbon segment (m). */
   SEGMENT_LENGTH: 64,
+  /** Segments kept behind / ahead of the viewer (+ slack segments). */
+  BEHIND: 64,
+  SLACK_SEGMENTS: 2,
   /** Lift above terrain height to avoid z-fighting. */
   LIFT: 0.02,
   /** Lane-marking texture size. */
@@ -104,6 +107,19 @@ export const ROAD_MESH = {
   /** UV v = s / TEXTURE_REPEAT_LENGTH (meters per texture tile). */
   TEXTURE_REPEAT_LENGTH: 8,
   ANISOTROPY: 4,
+  /** Canvas colors. */
+  ASPHALT: '#3a3d42',
+  MARKING: '#e8e6dc',
+  /** Lane geometry (m, lateral offsets from centerline). */
+  EDGE_LINE_LATERAL: 3.55,
+  EDGE_LINE_WIDTH: 0.16,
+  CENTER_LINE_WIDTH: 0.14,
+  /**
+   * Center-dash pattern. One texture tile = 8 m; a 3 m line + 1 m gap gives
+   * a 4 m cycle (2 per tile) so the pattern tiles seamlessly across repeats.
+   */
+  DASH_LINE_M: 3,
+  DASH_GAP_M: 1,
 } as const;
 
 // ---------------------------------------------------------------------------

@@ -7,8 +7,10 @@
  */
 
 import { describe, expect, test } from 'bun:test';
+import { Scene } from 'three';
 import { RoadGenerator } from '../src/world/RoadGenerator.ts';
-import { ROAD } from '../src/config.ts';
+import { RoadMesh } from '../src/world/RoadMesh.ts';
+import { ROAD, ROAD_MESH } from '../src/config.ts';
 import type { NearestResult, RoadSample } from '../src/types.ts';
 
 function newSample(): RoadSample {
@@ -188,6 +190,57 @@ describe('RoadGenerator.nearest', () => {
     // 300 m west of the start; the road heads north-ish from the origin.
     road.nearest(-300, -200, out);
     expect(out.dist).toBeGreaterThan(ROAD.BLEND_DISTANCE);
+  });
+});
+
+describe('RoadMesh segment joins', () => {
+  test('adjacent segments share the exact boundary cross-section', () => {
+    const road = new RoadGenerator(2468);
+    road.ensureAhead(600);
+    const scene = new Scene();
+    const mesh = new RoadMesh(scene, road, 2468, 4);
+    mesh.update(0);
+
+    const m0 = mesh.getSegment(0);
+    const m1 = mesh.getSegment(1);
+    expect(m0).toBeDefined();
+    expect(m1).toBeDefined();
+    if (m0 === undefined || m1 === undefined) return;
+
+    const p0 = m0.geometry.getAttribute('position');
+    const p1 = m1.geometry.getAttribute('position');
+    const u0 = m0.geometry.getAttribute('uv');
+    const u1 = m1.geometry.getAttribute('uv');
+    const cross = ROAD_MESH.SEGMENT_LENGTH / ROAD.SAMPLE_SPACING;
+    const vLast = cross * 2; // last cross-section's left vertex in segment 0
+
+    // World-space positions of the shared boundary: m0's last cross-section
+    // vs m1's first. Stored local to each segment origin, so recombine.
+    for (let k = 0; k < 2; k++) {
+      const x0 = p0.getX(vLast + k) + m0.position.x;
+      const y0 = p0.getY(vLast + k) + m0.position.y;
+      const z0 = p0.getZ(vLast + k) + m0.position.z;
+      const x1 = p1.getX(k) + m1.position.x;
+      const y1 = p1.getY(k) + m1.position.y;
+      const z1 = p1.getZ(k) + m1.position.z;
+      expect(x0).toBeCloseTo(x1, 3);
+      expect(y0).toBeCloseTo(y1, 3);
+      expect(z0).toBeCloseTo(z1, 3);
+      // UV v is continuous across the join (v = s / 8).
+      expect(u0.getY(vLast + k)).toBeCloseTo(u1.getY(k), 6);
+    }
+
+    // The ribbon sits at roadY + LIFT (checked against the centerline).
+    const sample: RoadSample = {
+      s: 0, x: 0, y: 0, z: 0, heading: 0, tx: 0, tz: 0, nx: 0, nz: 0, curvature: 0,
+    };
+    road.sampleAt(32, sample); // middle of segment 0
+    const midVertex = (32 / ROAD.SAMPLE_SPACING) * 2; // cross-section i=16, left vert
+    const leftY = p0.getY(midVertex) + m0.position.y;
+    expect(leftY).toBeCloseTo(sample.y + ROAD_MESH.LIFT, 3);
+
+    mesh.dispose();
+    expect(scene.children.length).toBe(0);
   });
 });
 

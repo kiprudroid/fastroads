@@ -28,7 +28,7 @@ import { Sky } from '../world/Sky.ts';
 import { RoadGenerator } from '../world/RoadGenerator.ts';
 import { HeightField } from '../world/HeightField.ts';
 import { Terrain } from '../world/Terrain.ts';
-import { TempRoadStrip } from '../world/TempRoadStrip.ts';
+import { RoadMesh } from '../world/RoadMesh.ts';
 import { DebugStats } from '../debug/DebugStats.ts';
 import { FreeFlyCamera } from '../debug/FreeFlyCamera.ts';
 import { RoadPlot } from '../debug/RoadPlot.ts';
@@ -60,7 +60,7 @@ export class Game {
   private readonly freeCam: FreeFlyCamera;
   private readonly roadPlot: RoadPlot | null;
   private readonly terrain: Terrain;
-  private readonly tempRoadStrip: TempRoadStrip;
+  private readonly roadMesh: RoadMesh;
   private readonly autopilot: Autopilot | null;
   /** Arc length the viewer (car, later) is at — drives world streaming. */
   private viewerS = 0;
@@ -120,7 +120,12 @@ export class Game {
     );
     const heightField = new HeightField(opts.seed, this.road);
     this.terrain = new Terrain(this.scene, heightField, level);
-    this.tempRoadStrip = new TempRoadStrip(this.scene, this.road);
+    this.roadMesh = new RoadMesh(
+      this.scene,
+      this.road,
+      opts.seed,
+      this.renderer.capabilities.getMaxAnisotropy(),
+    );
     this.autopilot = opts.autopilot === true ? new Autopilot(this.road) : null;
     if (this.autopilot !== null) this.freeCam.enabled = false;
 
@@ -177,7 +182,7 @@ export class Game {
       );
 
       this.terrain.update(cam.x, cam.z);
-      this.tempRoadStrip.update(this.viewerS);
+      this.roadMesh.update(this.viewerS);
 
       // Trim AFTER eviction: keep samples for every active tile (they can sit
       // up to VIEW_RADIUS + TILE_SIZE behind the viewer), plus TRIM_BEHIND.
@@ -249,7 +254,7 @@ export class Game {
     this.loop.stop();
     window.removeEventListener('resize', this.onResize);
     this.sky.dispose();
-    this.tempRoadStrip.dispose();
+    this.roadMesh.dispose();
     this.terrain.dispose();
     this.freeCam.dispose();
     this.debugStats.dispose();
