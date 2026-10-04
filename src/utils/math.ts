@@ -40,3 +40,18 @@ export function angleDelta(a: number, b: number): number {
   if (d < -Math.PI) d += Math.PI * 2;
   return d;
 }
+
+/**
+ * Cheap deterministic value noise in [-1, 1] from integer-quantized world
+ * coordinates. Integer math only (no Math.sin) so the result is bit-identical
+ * across JS engines — important for cross-browser determinism of vertex
+ * colors. Quantized to 1/16 m so it is stable under float wiggle.
+ */
+export function hashNoise2D(x: number, z: number): number {
+  const qx = Math.round(x * 16) | 0;
+  const qz = Math.round(z * 16) | 0;
+  let h = (Math.imul(qx, 374761393) + Math.imul(qz, 668265263)) | 0;
+  h = Math.imul(h ^ (h >>> 13), 1274126177);
+  h ^= h >>> 16;
+  return ((h >>> 0) / 2147483648) - 1;
+}

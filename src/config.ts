@@ -82,6 +82,12 @@ export const TERRAIN = {
   ROAD_EMBED: 0.15,
   /** Finite-difference epsilon for normalAt. */
   NORMAL_EPS: 1.0,
+  /**
+   * Neighbor samples may reuse a previous nearest-road search (hint) when the
+   * result is within this tolerance (m) of the hinted distance. Must exceed
+   * the tile vertex spacing (TILE_SIZE / TILE_SEGMENTS).
+   */
+  HINT_TOLERANCE: 6,
 } as const;
 
 // ---------------------------------------------------------------------------

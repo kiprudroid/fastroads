@@ -15,10 +15,7 @@
 
 import {
   Color,
-  Mesh,
-  MeshLambertMaterial,
   PerspectiveCamera,
-  PlaneGeometry,
   Scene,
   WebGLRenderer,
 } from 'three';
@@ -28,11 +25,15 @@ import { Input } from './Input.ts';
 import { Loop } from './Loop.ts';
 import { Quality, resolveQualityLevel } from './Quality.ts';
 import { Sky } from '../world/Sky.ts';
-import { Palette } from '../world/Palette.ts';
 import { RoadGenerator } from '../world/RoadGenerator.ts';
+import { HeightField } from '../world/HeightField.ts';
+import { Terrain } from '../world/Terrain.ts';
+import { TempRoadStrip } from '../world/TempRoadStrip.ts';
 import { DebugStats } from '../debug/DebugStats.ts';
 import { FreeFlyCamera } from '../debug/FreeFlyCamera.ts';
 import { RoadPlot } from '../debug/RoadPlot.ts';
+import { Autopilot } from '../debug/Autopilot.ts';
+import type { NearestResult } from '../types.ts';
 
 export interface GameOptions {
   seed: number;
@@ -42,7 +43,6 @@ export interface GameOptions {
 }
 
 const CAMERA_NEAR = 0.1;
-const TEMP_GROUND_SIZE = 3000; // phase 3 replaces this with terrain tiles
 
 export class Game {
   readonly seed: number;
@@ -58,10 +58,18 @@ export class Game {
   private readonly quality: Quality;
   private readonly debugStats: DebugStats;
   private readonly freeCam: FreeFlyCamera;
-  private readonly tempGround: Mesh;
   private readonly roadPlot: RoadPlot | null;
+  private readonly terrain: Terrain;
+  private readonly tempRoadStrip: TempRoadStrip;
+  private readonly autopilot: Autopilot | null;
   /** Arc length the viewer (car, later) is at — drives world streaming. */
   private viewerS = 0;
+  private readonly viewerNearest: NearestResult = {
+    s: 0,
+    lateral: 0,
+    dist: 0,
+    roadY: 0,
+  };
 
   // fps / stats sampling
   private fpsFrames = 0;
@@ -101,17 +109,23 @@ export class Game {
 
     this.sky = new Sky(this.scene, far);
 
-    // Temporary flat ground until phase 3 (terrain tiles).
-    const groundGeo = new PlaneGeometry(TEMP_GROUND_SIZE, TEMP_GROUND_SIZE, 1, 1);
-    groundGeo.rotateX(-Math.PI / 2);
-    this.tempGround = new Mesh(groundGeo, new MeshLambertMaterial({ color: Palette.grassMid }));
-    this.scene.add(this.tempGround);
-
     this.debugStats = new DebugStats(root);
     this.freeCam = new FreeFlyCamera(this.camera, this.renderer.domElement, this.input);
 
+    // --- world (road is the master structure; everything derives from it) ---
     this.road = new RoadGenerator(opts.seed);
     this.roadPlot = opts.debugRoad === true ? new RoadPlot(root, this.road) : null;
+    this.road.ensureAhead(
+      TERRAIN.VIEW_RADIUS + ROAD.LOOKAHEAD_MARGIN,
+    );
+    const heightField = new HeightField(opts.seed, this.road);
+    this.terrain = new Terrain(this.scene, heightField, level);
+    this.tempRoadStrip = new TempRoadStrip(this.scene, this.road);
+    this.autopilot = opts.autopilot === true ? new Autopilot(this.road) : null;
+    if (this.autopilot !== null) this.freeCam.enabled = false;
+
+    // Synchronous first build so the player never starts in a void.
+    this.terrain.buildInitial(this.camera.position.x, this.camera.position.z);
 
     this.loop = new Loop(this.step, this.frame);
 
@@ -140,16 +154,40 @@ export class Game {
   private readonly frame = (dt: number): void => {
     this.handleActions();
 
-    // World streaming: the road must cover the view radius (+margin) ahead.
-    this.road.ensureAhead(
-      Math.max(
-        this.viewerS + TERRAIN.VIEW_RADIUS + ROAD.LOOKAHEAD_MARGIN,
-        this.roadPlot !== null ? DEBUG.ROAD_PLOT_LENGTH : 0,
-      ),
-    );
+    if (!this.loop.paused) {
+      // --- camera source: autopilot (dev) or free-fly ---
+      if (this.autopilot !== null) {
+        this.autopilot.updateCamera(this.camera, dt);
+      } else if (this.freeCam.enabled) {
+        this.freeCam.update(dt);
+      }
 
-    if (!this.loop.paused && this.freeCam.enabled) {
-      this.freeCam.update(dt);
+      // --- viewer's position on the road drives all streaming ---
+      const cam = this.camera.position;
+      this.road.nearest(cam.x, cam.z, this.viewerNearest, this.viewerS);
+      if (Number.isFinite(this.viewerNearest.dist)) {
+        this.viewerS = this.viewerNearest.s;
+      }
+
+      this.road.ensureAhead(
+        Math.max(
+          this.viewerS + TERRAIN.VIEW_RADIUS + ROAD.LOOKAHEAD_MARGIN,
+          this.roadPlot !== null ? DEBUG.ROAD_PLOT_LENGTH : 0,
+        ),
+      );
+
+      this.terrain.update(cam.x, cam.z);
+      this.tempRoadStrip.update(this.viewerS);
+
+      // Trim AFTER eviction: keep samples for every active tile (they can sit
+      // up to VIEW_RADIUS + TILE_SIZE behind the viewer), plus TRIM_BEHIND.
+      this.road.trim(
+        this.viewerS -
+          Math.max(
+            0,
+            TERRAIN.VIEW_RADIUS + TERRAIN.TILE_SIZE - ROAD.TRIM_BEHIND,
+          ),
+      );
     }
 
     this.sky.update(this.camera.position);
@@ -174,7 +212,7 @@ export class Game {
         triangles: info.render.triangles,
         geometries: info.memory.geometries,
         textures: info.memory.textures,
-        activeTiles: 0, // phase 3+
+        activeTiles: this.terrain.tileCount,
         roadSamples: this.road.sampleCount,
         pixelRatio: this.quality.pixelRatio,
       },
@@ -211,8 +249,8 @@ export class Game {
     this.loop.stop();
     window.removeEventListener('resize', this.onResize);
     this.sky.dispose();
-    this.tempGround.geometry.dispose();
-    (this.tempGround.material as MeshLambertMaterial).dispose();
+    this.tempRoadStrip.dispose();
+    this.terrain.dispose();
     this.freeCam.dispose();
     this.debugStats.dispose();
     this.roadPlot?.dispose();

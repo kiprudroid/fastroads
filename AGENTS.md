@@ -114,8 +114,21 @@ it plus a deterministic world height function. Everything is a pure function of
 - `heightAt(x, z)` is **pure** (this is what guarantees seam-free tiles):
   hills = fbm2D(x/320, z/320, 4 oct)*45 + fbm2D(x/90, z/90, 2 oct)*4, blended
   with `roadY` by `smoothstep` over `BLEND_DISTANCE` from the road edge.
+  Chosen variant: **hills relative to the road**
+  (`h = roadY + w * (hills(p) - hills(roadPoint))`) — exactly `roadY` under
+  the carriageway, no long-distance drift, continuous everywhere.
+  Deviations from the literal spec (both intentional, see HeightField.ts):
+  the 0.15 m road embed **fades over the shoulder** instead of cutting at
+  `HALF_WIDTH` (a hard cut leaves a visible 15 cm step along road edges), and
+  road elevation **tracks** the closed-form fbm profile through a 7% slope
+  limiter so the grade cap holds by construction.
 - `normalAt` = central finite differences of `heightAt` (ε = 1 m) — never
   `computeVertexNormals()` per tile, or tile borders show seams.
+- Tile building reuses the nearest-road search of the previous vertex as a
+  **hint** (only near the road, where buckets are dense). Accepted hints are
+  provably identical to the full search for ≤4 m displacements, so hinted and
+  unhinted paths stay bit-identical — no seams. `hills(roadPoint)` is memoized
+  by exact `s`.
 - Tiles: world-aligned `TILE_SIZE` squares, positions stored **local to tile
   origin** (mesh.position = tile origin) to avoid float jitter. Shared index
   buffer across all tiles. Vertex colors from `Palette`.

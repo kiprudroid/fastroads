@@ -243,11 +243,19 @@ export class RoadGenerator {
    * Closest point on the centerline to (x, z).
    *
    * `lateral` is signed: positive = right of the direction of travel.
-   * When `hintS` is given (the car's previous s), a cheap local scan around it
-   * is tried first and accepted if it lands within BLEND_DISTANCE.
+   * When `hintS` is given (a previous s near the query), a cheap local scan
+   * around it is tried first and accepted if it lands within `hintMaxDist`
+   * (default BLEND_DISTANCE). HeightField passes a larger tolerance plus its
+   * own validation so neighboring terrain vertices can share one search.
    * If no sample exists at all, `out.dist` is Infinity.
    */
-  nearest(x: number, z: number, out: NearestResult, hintS?: number): void {
+  nearest(
+    x: number,
+    z: number,
+    out: NearestResult,
+    hintS?: number,
+    hintMaxDist: number = ROAD.BLEND_DISTANCE,
+  ): void {
     this.resetBest();
 
     if (this.points.length === 1) {
@@ -264,7 +272,7 @@ export class RoadGenerator {
 
     if (hintS !== undefined) {
       this.searchHint(x, z, hintS);
-      if (this.bestD2 <= ROAD.BLEND_DISTANCE * ROAD.BLEND_DISTANCE) {
+      if (this.bestD2 <= hintMaxDist * hintMaxDist) {
         this.fillFromBest(x, z, out);
         return;
       }
@@ -318,10 +326,16 @@ export class RoadGenerator {
       for (let cz = -1; cz <= 1; cz++) {
         const bucket = this.hash.get(cellKey(ix + cx, iz + cz));
         if (bucket === undefined) continue;
+        // Buckets hold ascending, usually contiguous global indices (the road
+        // is generated sequentially). Forward segments cover everything except
+        // the segment entering each contiguous run, so test that once per run:
+        // exact coverage with roughly half the projections.
+        let prevGi = -1;
         for (let b = 0; b < bucket.length; b++) {
           const gi = bucket[b];
           this.consider(gi, gi + 1, x, z);
-          this.consider(gi - 1, gi, x, z);
+          if (gi !== prevGi + 1) this.consider(gi - 1, gi, x, z);
+          prevGi = gi;
         }
       }
     }
@@ -334,9 +348,11 @@ export class RoadGenerator {
       this.baseIndex + this.points.length - 2,
       hintGi + ROAD.HINT_WINDOW,
     );
+    if (lo > hi) return;
+    // Segments (lo-1, lo) ... (hi, hi+1) — one pass, no duplicates.
+    this.consider(lo - 1, lo, x, z);
     for (let gi = lo; gi <= hi; gi++) {
       this.consider(gi, gi + 1, x, z);
-      this.consider(gi - 1, gi, x, z);
     }
   }
 
