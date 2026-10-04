@@ -17,7 +17,6 @@ import {
   Color,
   PerspectiveCamera,
   Scene,
-  Vector3,
   WebGLRenderer,
 } from 'three';
 import { CAMERA, DEBUG, QUALITY_PRESETS, ROAD, SKY, TERRAIN } from '../config.ts';
@@ -36,6 +35,7 @@ import { RoadPlot } from '../debug/RoadPlot.ts';
 import { Autopilot } from '../debug/Autopilot.ts';
 import { Car, type CarControls } from '../vehicle/Car.ts';
 import { CarModel } from '../vehicle/CarModel.ts';
+import { ChaseCamera } from '../camera/ChaseCamera.ts';
 import type { NearestResult } from '../types.ts';
 
 export interface GameOptions {
@@ -65,16 +65,15 @@ export class Game {
   private readonly terrain: Terrain;
   private readonly roadMesh: RoadMesh;
   private readonly autopilot: Autopilot | null;
-  private readonly heightField: HeightField;
   readonly car: Car;
   private readonly carModel: CarModel;
+  private readonly chaseCam: ChaseCamera;
   private readonly controls: CarControls = {
     throttle: 0,
     brake: 0,
     left: false,
     right: false,
   };
-  private readonly followTarget = new Vector3();
   /** Arc length the viewer (car, later) is at — drives world streaming. */
   private viewerS = 0;
   private readonly viewerNearest: NearestResult = {
@@ -132,7 +131,6 @@ export class Game {
       TERRAIN.VIEW_RADIUS + ROAD.LOOKAHEAD_MARGIN,
     );
     const heightField = new HeightField(opts.seed, this.road);
-    this.heightField = heightField;
     this.terrain = new Terrain(this.scene, heightField, level);
     this.roadMesh = new RoadMesh(
       this.scene,
@@ -147,6 +145,8 @@ export class Game {
     this.carModel = new CarModel();
     this.carModel.group.rotation.order = 'YXZ';
     this.scene.add(this.carModel.group);
+    this.chaseCam = new ChaseCamera(this.camera, heightField);
+    this.chaseCam.reset(this.car);
 
     // Synchronous first build so the player never starts in a void.
     this.terrain.buildInitial(this.camera.position.x, this.camera.position.z);
@@ -189,11 +189,11 @@ export class Game {
     this.handleActions();
 
     if (!this.loop.paused) {
-      // --- camera source: free-fly (debug, B) or follow-the-car ---
+      // --- camera source: free-fly (debug, B) or the chase camera ---
       if (this.freeCam.enabled) {
         this.freeCam.update(dt);
       } else {
-        this.updateFollowCamera();
+        this.chaseCam.update(dt, this.car);
       }
 
       // --- viewer's position on the road drives all streaming ---
@@ -278,28 +278,6 @@ export class Game {
     if (this.input.consume('pause')) {
       this.loop.setUserPaused(!this.loop.paused);
     }
-  }
-
-  /**
-   * Rigid chase view (temporary until phase 6's ChaseCamera): sits behind the
-   * car and looks ahead, never below the terrain.
-   */
-  private updateFollowCamera(): void {
-    const fwdX = Math.sin(this.car.heading);
-    const fwdZ = -Math.cos(this.car.heading);
-    const camX = this.car.x - fwdX * CAMERA.BACK;
-    const camZ = this.car.z - fwdZ * CAMERA.BACK;
-    let camY = this.car.y + CAMERA.UP;
-    const ground = this.heightField.heightAt(camX, camZ);
-    camY = Math.max(camY, ground + CAMERA.MIN_GROUND_CLEARANCE);
-
-    this.camera.position.set(camX, camY, camZ);
-    this.followTarget.set(
-      this.car.x + fwdX * CAMERA.LOOK_AHEAD,
-      this.car.y + CAMERA.LOOK_UP,
-      this.car.z + fwdZ * CAMERA.LOOK_AHEAD,
-    );
-    this.camera.lookAt(this.followTarget);
   }
 
   // -------------------------------------------------------------------------
